@@ -1,6 +1,8 @@
 library(mice)
 library(brms)
 library(HDInterval)
+library(psych)
+library(nFactors)
 
 #Data is available by request from the Shuar Health and Life History Project
 #See https://www.shuarproject.org/data-sharing
@@ -24,16 +26,14 @@ d$MSOL<-(d$MSOL-mean(d$MSOL,na.rm=TRUE))/sd(d$MSOL,na.rm=TRUE)
 d$HOUSE<-(d$HOUSE-mean(d$HOUSE,na.rm=TRUE))/sd(d$HOUSE,na.rm=TRUE)
 d$TSOL<-(d$TSOL-mean(d$TSOL,na.rm=TRUE))/sd(d$TSOL,na.rm=TRUE)
 
-
 #produce disgust factors
 fitd<-d[,grep("D[0-9]+_",names(d))] #Find the columns that are disgust items
-library(nFactors)
 ev <- eigen(cor(fitd)) # get eigenvalues
 ap <- parallel(subject=nrow(fitd),var=ncol(fitd),rep=100,cent=.05)
 nS <- nScree(x=ev$values, aparallel=ap$eigen$qevpea)
 plotnScree(nS)
 
-library(psych)
+
 fit0<-principal(fitd,nfactors=3,rotate="oblimin")
 d$PDSCont<-fit0$scores[,1]
 d$PDSFood<-fit0$scores[,2]

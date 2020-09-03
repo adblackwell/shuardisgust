@@ -22,9 +22,9 @@ dat1$Village<-sample(1:3,nrow(dat1),replace=TRUE)
 #roughly 9 families per village
 dat1$Family<-sample(1:9,nrow(dat1),replace=TRUE)+dat1$Village*10
 
-#sds for random effects for each variable, roughly based off random effects from actual data. Note, no attempt to recreate correlation patterns in houshold or village clustering, and same sd applied to all disgust variables.
-famsd<-c(0,0,0.9,0.5,0.9,0.6,0.6,0.6,0.3,0.3)
-vilsd<-c(0,0,1.8,2.6,1.6,2,2,2,0.6,0.6)
+#sds for random effects for each variable. Note, no attempt to recreate correlation patterns in household or village clustering, and same sd applied to all disgust variables.
+famsd<-c(0,0,0.1,0.1,0.1,0.1,0.1,0.1,0.3,0.3)
+vilsd<-c(0,0,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2)
 families<-unique(dat1$Family)
 fameffects<-data.frame(sapply(famsd,function(x) rnorm(length(families),0,x)))
 names(fameffects)<-varnames[1:10]
@@ -41,11 +41,11 @@ vileffects<-merge(dat1[,c("PID","Village")],vileffects)
 dat1<-dat1[order(dat1$Village),]
 dat1[varnames[1:10]]<-dat1[varnames[1:10]] + vileffects[varnames[1:10]]
 
-famdisgust<-data.frame(Family=unique(dat1$Family),famef=rnorm(length(families),0,0.3))
+famdisgust<-data.frame(Family=unique(dat1$Family),famef=rnorm(length(families),0,0.1))
 famdisgust<-merge(dat1[,c("PID","Family")],famdisgust)
 dat1[varnames[11:19]]<-apply(dat1[varnames[11:19]],2,function(x) x + famdisgust$famef)
 
-vildisgust<-data.frame(Family=unique(dat1$Village),ef=rnorm(3,0,1.5))
+vildisgust<-data.frame(Family=unique(dat1$Village),ef=rnorm(3,0,0.2))
 vildisgust<-merge(dat1[,c("PID","Village")],vildisgust)
 dat1[varnames[11:19]]<-apply(dat1[varnames[11:19]],2,function(x) x + vildisgust$ef)
 
