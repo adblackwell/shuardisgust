@@ -1,12 +1,71 @@
+
+
+##Rstan 2.21 is causing crashing when running multiple models. Use this to revert to 2.19 if needed
+#require(devtools)
+#install_version("rstan", version = "2.19.3", repos = "http://cran.us.r-project.org")
+
 library(mice)
 library(brms)
 library(HDInterval)
 library(psych)
 library(nFactors)
 
+#sessionInfo()
+
+# R version 4.0.3 (2020-10-10)
+# Platform: x86_64-w64-mingw32/x64 (64-bit)
+# Running under: Windows 10 x64 (build 19042)
+# 
+# Matrix products: default
+# 
+# locale:
+#   [1] LC_COLLATE=English_United States.1252  LC_CTYPE=English_United States.1252   
+# [3] LC_MONETARY=English_United States.1252 LC_NUMERIC=C                          
+# [5] LC_TIME=English_United States.1252    
+# 
+# attached base packages:
+#   [1] stats     graphics  grDevices utils     datasets  methods   base     
+# 
+# other attached packages:
+#   [1] nFactors_2.4.1   lattice_0.20-41  psych_2.0.9      HDInterval_0.2.2 brms_2.14.0      Rcpp_1.0.5 
+# [7] mice_3.11.0     
+# 
+# loaded via a namespace (and not attached):
+# [1] nlme_3.1-149         matrixStats_0.57.0   xts_0.12.1           threejs_0.3.3       
+# [5] rstan_2.19.3         tools_4.0.3          backports_1.1.10     R6_2.5.0            
+# [9] DT_0.16              colorspace_1.4-1     mnormt_2.0.2         tidyselect_1.1.0    
+# [13] gridExtra_2.3        prettyunits_1.1.1    processx_3.4.4       Brobdingnag_1.2-6   
+# [17] emmeans_1.5.1        compiler_4.0.3       cli_2.1.0            shinyjs_2.0.0       
+# [21] sandwich_3.0-0       colourpicker_1.1.0   scales_1.1.1         dygraphs_1.1.1.6    
+# [25] mvtnorm_1.1-1        ggridges_0.5.2       callr_3.5.1          stringr_1.4.0       
+# [29] digest_0.6.27        StanHeaders_2.21.0-6 base64enc_0.1-3      pkgconfig_2.0.3     
+# [33] htmltools_0.5.0      fastmap_1.0.1        htmlwidgets_1.5.2    rlang_0.4.8         
+# [37] rstudioapi_0.11      shiny_1.5.0          generics_0.0.2       zoo_1.8-8           
+# [41] crosstalk_1.1.0.1    gtools_3.8.2         dplyr_1.0.2          inline_0.3.16       
+# [45] magrittr_1.5         loo_2.3.1            bayesplot_1.7.2      Matrix_1.2-18       
+# [49] munsell_0.5.0        fansi_0.4.1          abind_1.4-5          lifecycle_0.2.0     
+# [53] stringi_1.5.3        multcomp_1.4-14      MASS_7.3-53          pkgbuild_1.1.0      
+# [57] plyr_1.8.6           grid_4.0.3           parallel_4.0.3       promises_1.1.1      
+# [61] crayon_1.3.4         miniUI_0.1.1.1       splines_4.0.3        tmvnsim_1.0-2       
+# [65] ps_1.4.0             pillar_1.4.6         igraph_1.2.6         markdown_1.1        
+# [69] estimability_1.3     shinystan_2.5.0      reshape2_1.4.4       codetools_0.2-16    
+# [73] stats4_4.0.3         rstantools_2.1.1     glue_1.4.2           RcppParallel_5.0.2  
+# [77] vctrs_0.3.4          httpuv_1.5.4         gtable_0.3.0         purrr_0.3.4         
+# [81] tidyr_1.1.2          assertthat_0.2.1     ggplot2_3.3.2        mime_0.9            
+# [85] xtable_1.8-4         broom_0.7.2          coda_0.19-4          later_1.1.0.1       
+# [89] rsconnect_0.8.16     survival_3.2-7       tibble_3.0.4         shinythemes_1.1.2   
+# [93] TH.data_1.0-10       ellipsis_0.3.1       bridgesampling_1.0-0
+
+
+# stan settings
+rstan::rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+
+
 #Data is available by request from the Shuar Health and Life History Project
 #See https://www.shuarproject.org/data-sharing
 #d<-read.delim("Disgust Paper Data.csv",stringsAsFactors = TRUE, header = TRUE)
+
 
 #For the purposes of working through the code, data can be simulated with the code in "0_Simulate data as example.R". Note that the simulated data is randomized and won't reproduce the same associations or factor loadings.
 
@@ -26,30 +85,56 @@ d$MSOL<-(d$MSOL-mean(d$MSOL,na.rm=TRUE))/sd(d$MSOL,na.rm=TRUE)
 d$HOUSE<-(d$HOUSE-mean(d$HOUSE,na.rm=TRUE))/sd(d$HOUSE,na.rm=TRUE)
 d$TSOL<-(d$TSOL-mean(d$TSOL,na.rm=TRUE))/sd(d$TSOL,na.rm=TRUE)
 
-#produce disgust factors
+#put the disgust items in a new dataframe for manipulation
 fitd<-d[,grep("D[0-9]+_",names(d))] #Find the columns that are disgust items
+
+#First reduce to a single component
+fit<-principal(fitd,nfactors=1)
+#single factor scores are essentially the same as just summing the items and z-scoring
+plot(fit$scores,rowSums(fitd))
+d$PDSTotal<-fit$scores[,1]
+
+#Now check for subcomponents and create loadings
 ev <- eigen(cor(fitd)) # get eigenvalues
 ap <- parallel(subject=nrow(fitd),var=ncol(fitd),rep=100,cent=.05)
 nS <- nScree(x=ev$values, aparallel=ap$eigen$qevpea)
 plotnScree(nS)
-
-
+#Parallel analysis and optimal coordinates suggest 3 factors
 fit0<-principal(fitd,nfactors=3,rotate="oblimin")
 d$PDSCont<-fit0$scores[,1]
 d$PDSFood<-fit0$scores[,2]
 d$PDSPest<-fit0$scores[,3]
 ##In most analyses, excluding PDSPest, since it is not very interesting.
 
+#the three "raw meat" questions are relatively similar to each other so merge into one average, and check if loadings are similar
+cor(fitd[,13:15]) #correlation between raw questions
+fitd2<-fitd
+fitd2$D13_15_Raw<-rowMeans(fitd2[,13:15])
+fitd2<-fitd2[,-(13:15)]
+ev <- eigen(cor(fitd2)) # get eigenvalues
+ap <- parallel(subject=nrow(fitd2),var=ncol(fitd2),rep=100,cent=.05)
+nS <- nScree(x=ev$values, aparallel=ap$eigen$qevpea)
+plotnScree(nS)
+#both yield essentially the same loadings and three factors. Only Factor 2 loading shifts a bit, but still highly correlated
+fit1<-principal(fitd2,nfactors=3,rotate="oblimin")
+plot(fit0$scores[,1],fit1$scores[,1],main=cor(fit0$scores[,1],fit1$scores[,1]))
+plot(fit0$scores[,2],fit1$scores[,2],main=cor(fit0$scores[,2],fit1$scores[,2]))
+plot(fit0$scores[,3],fit1$scores[,3],main=cor(fit0$scores[,3],fit1$scores[,3]))
+
+#Correlations between the single component and three components
+cor(d[,c("PDSTotal","PDSCont","PDSFood","PDSPest")])
+
+
 #Infection factors
 #Subset to use for imputation
-dsub<-d[,c("Age","Sex","Village","PDSCont","PDSFood","MSOL","HOUSE","TSOL","NlnAscaris_EPG","NlnTrich_EPG","NlnIgE","NlnCRP","NlnIL6")]
+dsub<-d[,c("Age","Sex","Village","PDSTotal","PDSCont","PDSFood","PDSPest","MSOL","HOUSE","TSOL","NlnAscaris_EPG","NlnTrich_EPG","NlnIgE","NlnCRP","NlnIL6")]
 ##Impute missing
 set.seed(8274)
 dimp<-mice(dsub,m=10,method="rf") 
 dsets<-complete(dimp,"all")
-#Add additional vaiables back onto dataset
+#Add additional variables back onto dataset
 for(i in 1:length(dsets)){
-  dsets[[i]]<-cbind(dsets[[i]],d[,c("PID","Family","CRP","IgE","IL6","Ascaris_EPG","Trich_EPG","PDSPest")])
+  dsets[[i]]<-cbind(dsets[[i]],d[,c("PID","Family","CRP","IgE","IL6","Ascaris_EPG","Trich_EPG")])
 }
 #Long format (all 10 datasets together) for principal components
 dlong<-complete(dimp,"long")
@@ -75,13 +160,13 @@ ev <- eigen(cor(dlongfit)) # get eigenvalues
 ap <- parallel(subject=nrow(dlongfit),var=ncol(dlongfit),rep=100,cent=.05)
 nS <- nScree(x=ev$values, aparallel=ap$eigen$qevpea)
 plotnScree(nS)
-
+#Two factors supported
 fit2<-principal(dlongfit,nfactors=2,rotate="oblimin")
 dlong$Parasites <- fit2$scores[,1]
 dlong$Inflam <- fit2$scores[,2]
 
 #Add component loadings and household and village values to the 10 imputed datasets.
-##include orignal unimputed for some purposes
+##include original unimputed for some purposes
 dsets[[length(dsets)+1]]<-d
 
 for(i in 1:length(dsets)){
@@ -92,7 +177,8 @@ for(i in 1:length(dsets)){
   #Mean values for other family members and other village members
   dd$inHH<-ave(rep(1,nrow(dd)),dd$Family,FUN=sum)
   dd$inVi<-ave(rep(1,nrow(dd)),dd$Village,FUN=sum)
-  
+  dd$HHPDSTotal<-otherFam(dd$PDSTotal)
+  dd$ViPDSTotal<-otherVillage(dd$PDSTotal)
   dd$HHPDSCont<-otherFam(dd$PDSCont)
   dd$ViPDSCont<-otherVillage(dd$PDSCont)
   dd$HHPDSFood<-otherFam(dd$PDSFood)
@@ -105,10 +191,6 @@ for(i in 1:length(dsets)){
   dd$ViHOUSE<-otherVillage(dd$HOUSE)
   dd$HHTSOL<-otherFam(dd$TSOL)
   dd$ViTSOL<-otherVillage(dd$TSOL)
-  #dd$HHMarket<-otherFam(dd$Market)
-  #dd$ViMarket<-otherVillage(dd$Market)
-  #dd$HHTraditional<-otherFam(dd$Traditional)
-  #dd$ViTraditional<-otherVillage(dd$Traditional)
   dd$HHParasites<-otherFam(dd$Parasites)
   dd$ViParasites<-otherVillage(dd$Parasites)
   dd$HHInflam<-otherFam(dd$Inflam)
@@ -123,105 +205,126 @@ dsets<-dsets[1:(length(dsets)-1)]
 
 #Path analysis models
 brmhelp<-function(f1,...) brm_multiple(f1, data=dsets, family=gaussian(), chains=2,cores=4,iter=4000,control = list(adapt_delta = 0.99, max_treedepth=12),...)
+#Due to running the models on multiple imputed datasets and then combining, the Rhats and ESS will look bad. Run models with the combine=FALSE option to individually inspect the models for imputed dataset and see that individually they are fine, which is what we should be concerned with.
 
-#Inflam - PDSCont
+#Inflam - PDSTotal
 #Step 1 Direct
-mod1<-brmhelp(bf(Inflam ~ Age + Sex + PDSCont))
+mod1T<-brmhelp(bf(Inflam ~ Age + Sex + PDSTotal))
 mod2<-brmhelp(bf(Inflam ~ Age + Sex + HHInflam))
-mod3<-brmhelp(bf(Inflam ~ Age + Sex + HHPDSCont))
-mod4<-brmhelp(bf(HHInflam ~ Age + Sex + HHPDSCont + (1|Family)))
-mod1b<-brmhelp(bf(PDSCont ~ Age + Sex + Inflam))
-mod2b<-brmhelp(bf(PDSCont ~ Age + Sex + HHInflam))
-mod3b<-brmhelp(bf(PDSCont ~ Age + Sex + HHPDSCont))
-mod4b<-brmhelp(bf(HHPDSCont ~ Age + Sex + HHInflam + (1|Family)))
+mod3T<-brmhelp(bf(Inflam ~ Age + Sex + HHPDSTotal))
+mod4T<-brmhelp(bf(HHInflam ~ Age + Sex + HHPDSTotal + (1|Family)))
 
 #Step 2 Mediation on one side
-mod6<-brmhelp(bf(Inflam ~ Age + Sex + PDSCont + HHPDSCont) + bf(PDSCont ~ Age + Sex + HHPDSCont) + set_rescor(FALSE))
-mod7<-brmhelp(bf(Inflam ~ Age + Sex + HHInflam + HHPDSCont) + bf(HHInflam ~ Age + Sex + HHPDSCont +(1|Family)) + set_rescor(FALSE))
-mod6b<-brmhelp(bf(PDSCont ~ Age + Sex + Inflam + HHInflam) + bf(Inflam ~ Age + Sex + HHInflam) + set_rescor(FALSE))
-mod7b<-brmhelp(bf(PDSCont ~ Age + Sex + HHInflam + HHPDSCont) + bf(HHPDSCont ~ Age + Sex + HHInflam +(1|Family)) + set_rescor(FALSE))
+mod6T<-brmhelp(bf(Inflam ~ Age + Sex + PDSTotal + HHPDSTotal) + bf(PDSTotal ~ Age + Sex + HHPDSTotal) + set_rescor(FALSE))
+mod7T<-brmhelp(bf(Inflam ~ Age + Sex + HHInflam + HHPDSTotal) + bf(HHInflam ~ Age + Sex + HHPDSTotal +(1|Family)) + set_rescor(FALSE))
 
 #Step 3 Full Mediation one way
-mod8<-brmhelp(bf(Inflam ~ Age + Sex + PDSCont + HHInflam + HHPDSCont) + bf(PDSCont ~ Age + Sex + HHPDSCont) + bf(HHInflam ~ Age + Sex + HHPDSCont +(1|Family)) + set_rescor(FALSE))
-mod8b<-brmhelp(bf(PDSCont ~ Age + Sex + Inflam + HHInflam + HHPDSCont) + bf(Inflam ~ Age + Sex + HHInflam) + bf(HHPDSCont ~ Age + Sex + HHInflam +(1|Family)) + set_rescor(FALSE))
+mod8T<-brmhelp(bf(Inflam ~ Age + Sex + PDSTotal + HHInflam + HHPDSTotal) + bf(PDSTotal ~ Age + Sex + HHPDSTotal) + bf(HHInflam ~ Age + Sex + HHPDSTotal +(1|Family)) + set_rescor(FALSE))
 
 #Save models so I don't need to rerun them every time
-save(mod1,mod2,mod3,mod4,mod6,mod7,mod8,file="modCI.Rdata")
-save(mod1b,mod2b,mod3b,mod4b,mod6b,mod7b,mod8b,file="modCIb.Rdata")
+save(mod1T,mod2,mod3T,mod4T,mod6T,mod7T,mod8T,file="modTI.Rdata")
 
-#Inflam - PDSFood
+#Parasites - PDSTotal
 #Step 1 Direct
-modF1<-brmhelp(bf(Inflam ~ Age + Sex + PDSFood))
-modF2<-brmhelp(bf(Inflam ~ Age + Sex + HHInflam))
-modF3<-brmhelp(bf(Inflam ~ Age + Sex + HHPDSFood))
-modF4<-brmhelp(bf(HHInflam ~ Age + Sex + HHPDSFood + (1|Family)))
-modF1b<-brmhelp(bf(PDSFood ~ Age + Sex + Inflam))
-modF2b<-brmhelp(bf(PDSFood ~ Age + Sex + HHInflam))
-modF3b<-brmhelp(bf(PDSFood ~ Age + Sex + HHPDSFood))
-modF4b<-brmhelp(bf(HHPDSFood ~ Age + Sex + HHInflam + (1|Family)))
-
-#Step 2 Mediation on one side
-modF6<-brmhelp(bf(Inflam ~ Age + Sex + PDSFood + HHPDSFood) + bf(PDSFood ~ Age + Sex + HHPDSFood) + set_rescor(FALSE))
-modF7<-brmhelp(bf(Inflam ~ Age + Sex + HHInflam + HHPDSFood) + bf(HHInflam ~ Age + Sex + HHPDSFood +(1|Family)) + set_rescor(FALSE))
-modF6b<-brmhelp(bf(PDSFood ~ Age + Sex + Inflam + HHInflam) + bf(Inflam ~ Age + Sex + HHInflam) + set_rescor(FALSE))
-modF7b<-brmhelp(bf(PDSFood ~ Age + Sex + HHInflam + HHPDSFood) + bf(HHPDSFood ~ Age + Sex + HHInflam +(1|Family)) + set_rescor(FALSE))
-
-#Step 3 Full Mediation one way
-modF8<-brmhelp(bf(Inflam ~ Age + Sex + PDSFood + HHInflam + HHPDSFood) + bf(PDSFood ~ Age + Sex + HHPDSFood) + bf(HHInflam ~ Age + Sex + HHPDSFood +(1|Family)) + set_rescor(FALSE))
-modF8b<-brmhelp(bf(PDSFood ~ Age + Sex + Inflam + HHInflam + HHPDSFood) + bf(Inflam ~ Age + Sex + HHInflam) + bf(HHPDSFood ~ Age + Sex + HHInflam +(1|Family)) + set_rescor(FALSE))
-
-save(modF1,modF2,modF3,modF4,modF6,modF7,modF8,file="modF.Rdata")
-save(modF1b,modF2b,modF3b,modF4b,modF6b,modF7b,modF8b,file="modFb.Rdata")
-
-#Parasites - PDSCont
-#Step 1 Direct
-modP1<-brmhelp(bf(Parasites ~ Age + Sex + PDSCont))
+modP1T<-brmhelp(bf(Parasites ~ Age + Sex + PDSTotal))
 modP2<-brmhelp(bf(Parasites ~ Age + Sex + HHParasites))
-modP3<-brmhelp(bf(Parasites ~ Age + Sex + HHPDSCont))
-modP4<-brmhelp(bf(HHParasites ~ Age + Sex + HHPDSCont +(1|Family)))
-modP1b<-brmhelp(bf(PDSCont ~ Age + Sex + Parasites))
-modP2b<-brmhelp(bf(PDSCont ~ Age + Sex + HHParasites))
-modP3b<-brmhelp(bf(PDSCont ~ Age + Sex + HHPDSCont))
-modP4b<-brmhelp(bf(HHPDSCont ~ Age + Sex + HHParasites +(1|Family)))
+modP3T<-brmhelp(bf(Parasites ~ Age + Sex + HHPDSTotal))
+modP4T<-brmhelp(bf(HHParasites ~ Age + Sex + HHPDSTotal + (1|Family)))
 
 #Step 2 Mediation on one side
-modP6<-brmhelp(bf(Parasites ~ Age + Sex + PDSCont + HHPDSCont) + bf(PDSCont ~ Age + Sex + HHPDSCont) + set_rescor(FALSE))
-modP7<-brmhelp(bf(Parasites ~ Age + Sex + HHParasites + HHPDSCont) + bf(HHParasites ~ Age + Sex + HHPDSCont +(1|Family)) + set_rescor(FALSE))
-modP6b<-brmhelp(bf(PDSCont ~ Age + Sex + Parasites + HHParasites) + bf(Parasites ~ Age + Sex + HHParasites) + set_rescor(FALSE))
-modP7b<-brmhelp(bf(PDSCont ~ Age + Sex + HHParasites + HHPDSCont) + bf(HHPDSCont ~ Age + Sex + HHParasites +(1|Family)) + set_rescor(FALSE))
+modP6T<-brmhelp(bf(Parasites ~ Age + Sex + PDSTotal + HHPDSTotal) + bf(PDSTotal ~ Age + Sex + HHPDSTotal) + set_rescor(FALSE))
+modP7T<-brmhelp(bf(Parasites ~ Age + Sex + HHParasites + HHPDSTotal) + bf(HHParasites ~ Age + Sex + HHPDSTotal +(1|Family)) + set_rescor(FALSE))
 
 #Step 3 Full Mediation one way
-modP8<-brmhelp(bf(Parasites ~ Age + Sex + PDSCont + HHParasites + HHPDSCont) + bf(PDSCont ~ Age + Sex + HHPDSCont) + bf(HHParasites ~ Age + Sex + HHPDSCont +(1|Family)) + set_rescor(FALSE))
-modP8b<-brmhelp(bf(PDSCont ~ Age + Sex + Parasites + HHParasites + HHPDSCont) + bf(Parasites ~ Age + Sex + HHParasites) + bf(HHPDSCont ~ Age + Sex + HHParasites +(1|Family)) + set_rescor(FALSE))
+modP8T<-brmhelp(bf(Parasites ~ Age + Sex + PDSTotal + HHParasites + HHPDSTotal) + bf(PDSTotal ~ Age + Sex + HHPDSTotal) + bf(HHParasites ~ Age + Sex + HHPDSTotal +(1|Family)) + set_rescor(FALSE))
 
-save(modP1,modP2,modP3,modP4,modP6,modP7,modP8,file="modP.Rdata")
-save(modP1b,modP2b,modP3b,modP4b,modP6b,modP7b,modP8b,file="modPb.Rdata")
+#Save models so I don't need to rerun them every time
+save(modP1T,modP2,modP3T,modP4T,modP6T,modP7T,modP8T,file="modTP.Rdata")
 
-#Parasites - PDSFood
-#Step 1 Direct
-modPF1<-brmhelp(bf(Parasites ~ Age + Sex + PDSFood))
-modPF2<-brmhelp(bf(Parasites ~ Age + Sex + HHParasites))
-modPF3<-brmhelp(bf(Parasites ~ Age + Sex + HHPDSFood))
-modPF4<-brmhelp(bf(HHParasites ~ Age + Sex + HHPDSFood +(1|Family)))
-modPF1b<-brmhelp(bf(PDSFood ~ Age + Sex + Parasites))
-modPF2b<-brmhelp(bf(PDSFood ~ Age + Sex + HHParasites))
-modPF3b<-brmhelp(bf(PDSFood ~ Age + Sex + HHPDSFood))
-modPF4b<-brmhelp(bf(HHPDSFood ~ Age + Sex + HHParasites +(1|Family)))
-
-#Step 2 Mediation on one side
-modPF6<-brmhelp(bf(Parasites ~ Age + Sex + PDSFood + HHPDSFood) + bf(PDSFood ~ Age + Sex + HHPDSFood) + set_rescor(FALSE))
-modPF7<-brmhelp(bf(Parasites ~ Age + Sex + HHParasites + HHPDSFood) + bf(HHParasites ~ Age + Sex + HHPDSFood +(1|Family)) + set_rescor(FALSE))
-modPF6b<-brmhelp(bf(PDSFood ~ Age + Sex + Parasites + HHParasites) + bf(Parasites ~ Age + Sex + HHParasites) + set_rescor(FALSE))
-modPF7b<-brmhelp(bf(PDSFood ~ Age + Sex + HHParasites + HHPDSFood) + bf(HHPDSFood ~ Age + Sex + HHParasites +(1|Family)) + set_rescor(FALSE))
-
-#Step 3 Full Mediation one way
-modPF8<-brmhelp(bf(Parasites ~ Age + Sex + PDSFood + HHParasites + HHPDSFood) + bf(PDSFood ~ Age + Sex + HHPDSFood) + bf(HHParasites ~ Age + Sex + HHPDSFood +(1|Family)) + set_rescor(FALSE))
-modPF8b<-brmhelp(bf(PDSFood ~ Age + Sex + Parasites + HHParasites + HHPDSFood) + bf(Parasites ~ Age + Sex + HHParasites) + bf(HHPDSFood ~ Age + Sex + HHParasites +(1|Family)) + set_rescor(FALSE))
-
-save(modPF1,modPF2,modPF3,modPF4,modPF6,modPF7,modPF8,file="modPF.Rdata")
-save(modPF1b,modPF2b,modPF3b,modPF4b,modPF6b,modPF7b,modPF8b,file="modPFb.Rdata")
 
 #Step 4 Single model
+#This model has a regularizing prior for village level household effect, since in a few models when controlling for disgust these are estimated as negative effects (with) with wide intervals. Cross-validation suggests model with prior is a better fit.
+pr<-c(prior(normal(0,0.15), class = b, coef = ViInflam, resp = HHInflam),
+      prior(normal(0,0.15), class = b, coef = ViInflam, resp = Inflam))
+
+#with PDSTotal
+modT11<-brmhelp(
+  bf(Inflam ~ Age + Sex + PDSTotal+HHPDSTotal+HHInflam+ViInflam) +
+    bf(PDSTotal ~ Age + Sex + HHPDSTotal+ViPDSTotal) +
+    bf(HHInflam ~ HHPDSTotal + ViInflam + (1|p|Family)) + 
+    bf(HHPDSTotal ~ ViPDSTotal + (1|p|Family)) +
+    set_rescor(FALSE),prior=pr)
+
+modTP11<-brmhelp(
+  bf(Parasites ~ Age + Sex + PDSTotal+HHPDSTotal+HHParasites+ViParasites) +
+    bf(PDSTotal ~ Age + Sex + HHPDSTotal+ViPDSTotal) +
+    bf(HHParasites ~ HHPDSTotal + ViParasites + (1|p|Family)) + 
+    bf(HHPDSTotal ~ ViPDSTotal + (1|p|Family)) +
+    set_rescor(FALSE))
+
+save(modT11,modTP11,file="modT11.Rdata")
+
+#b is reverse causal direction
+modT11b<-brmhelp(
+  bf(Inflam ~ Age + Sex + HHInflam+ViInflam) +
+    bf(PDSTotal ~ Age + Sex + HHPDSTotal+Inflam+HHInflam+ViPDSTotal) +
+    bf(HHInflam ~ ViInflam + (1|p|Family)) + 
+    bf(HHPDSTotal ~ HHInflam + ViPDSTotal + (1|p|Family)) +
+    set_rescor(FALSE))
+
+modTP11b<-brmhelp(
+  bf(Parasites ~ Age + Sex + HHParasites+ViParasites) +
+    bf(PDSTotal ~ Age + Sex + HHPDSTotal+Parasites+HHParasites+ViPDSTotal) +
+    bf(HHParasites ~ ViParasites + (1|p|Family)) +
+    bf(HHPDSTotal ~ HHParasites + ViPDSTotal + (1|p|Family)) +
+    set_rescor(FALSE))
+
+save(modT11b,modTP11b,file="modT11b.Rdata")
+
+#MI models
+#with PDSTotal
+modT11MI<-brmhelp(
+  bf(Inflam ~ Age + Sex + PDSTotal+HHPDSTotal+HHInflam+(1|q|Village) + MSOL + TSOL + HOUSE) +
+    bf(PDSTotal ~ Age + Sex + HHPDSTotal+(1|q|Village) + MSOL + TSOL + HOUSE) +
+    bf(HHInflam ~ HHPDSTotal + (1|q|Village) + (1|p|Family) + MSOL + TSOL + HOUSE) + 
+    bf(HHPDSTotal ~ (1|q|Village) + (1|p|Family) + MSOL + TSOL + HOUSE) +
+    set_rescor(FALSE))
+
+modTP11MI<-brmhelp(
+  bf(Parasites ~ Age + Sex + PDSTotal+HHPDSTotal+HHParasites++ (1|q|Village) + MSOL + TSOL + HOUSE) +
+    bf(PDSTotal ~ Age + Sex + HHPDSTotal+(1|q|Village) + MSOL + TSOL + HOUSE) +
+    bf(HHParasites ~ HHPDSTotal + (1|q|Village) + (1|p|Family) + MSOL + TSOL + HOUSE) + 
+    bf(HHPDSTotal ~ (1|q|Village) + (1|p|Family) + MSOL + TSOL + HOUSE) +
+    set_rescor(FALSE))
+
+save(modT11MI,modTP11MI,file="modT11MI.Rdata")
+
+#with family as RE
+
+#PDSTotal
+modT11MI2<-brmhelp(
+  bf(Inflam ~ Age + Sex + PDSTotal + (1|p|Family) +(1|q|Village) + MSOL + TSOL + HOUSE) +
+    bf(PDSTotal ~ Age + Sex + Inflam + (1|p|Family) +(1|q|Village) + MSOL + TSOL + HOUSE) +  set_rescor(FALSE))
+
+modTP11MI2<-brmhelp(
+  bf(Parasites ~ Age + Sex + PDSTotal + (1|p|Family) + (1|q|Village) + MSOL + TSOL + HOUSE) +
+    bf(PDSTotal ~ Age + Sex + Parasites + (1|p|Family) +(1|q|Village) + MSOL + TSOL + HOUSE) +
+    set_rescor(FALSE))
+
+save(modT11MI2,modTP11MI2,file="modT11MI2.Rdata")
+
+#simple tests
+modTI1x<-brmhelp(bf(Inflam ~ Age + Sex + PDSTotal + (1|Family) + (1|Village)))
+modTP1x<-brmhelp(bf(Parasites ~ Age + Sex + PDSTotal + (1|Family) + (1|Village)))
+save(modTI1x,modTP1x, modC1x,modF1x,modP1x,modPF1x,file="simpleREmodels.Rdata")
+
+#correlations
+cors<-cor(d2[,c("PDSCont","PDSFood","Inflam","Parasites","MSOL","HOUSE","TSOL","HHPDSCont","HHPDSFood","HHInflam","HHParasites","ViPDSCont","ViPDSFood","ViInflam","ViParasites")],use="pairwise.complete.obs")
+heatmap(cors,Rowv=NA,Colv=NA,)
+
+
+
+#Models with three component scores
 #This model has a regularizing prior for village level household effect, since in a few models when controlling for disgust these are estimated as negative effects (with) with wide intervals. Cross-validation suggests model with prior is a better fit.
 pr<-c(prior(normal(0,0.15), class = b, coef = ViInflam, resp = HHInflam),
       prior(normal(0,0.15), class = b, coef = ViInflam, resp = Inflam))
@@ -254,38 +357,25 @@ modPF11<-brmhelp(
     bf(HHPDSFood ~ ViPDSFood+(1|p|Family)) +
     set_rescor(FALSE))
 
-save(mod11,modP11,modF11,modPF11,file="mod11.Rdata")
+modV11<-brmhelp(
+  bf(Inflam ~ Age + Sex + PDSPest+HHPDSPest+HHInflam+ViInflam) +
+    bf(PDSPest ~ Age + Sex + HHPDSPest+ViPDSPest) +
+    bf(HHInflam ~ HHPDSCont + ViInflam + (1|p|Family)) + 
+    bf(HHPDSPest ~ ViPDSPest + (1|p|Family)) +
+    set_rescor(FALSE),prior=pr)
 
-#b is reverse causal direction
-mod11b<-brmhelp(
-  bf(Inflam ~ Age + Sex + HHInflam+ViInflam) +
-    bf(PDSCont ~ Age + Sex + HHPDSCont+Inflam+HHInflam+ViPDSCont) +
-    bf(HHInflam ~ ViInflam + (1|p|Family)) + 
-    bf(HHPDSCont ~ HHInflam + ViPDSCont + (1|p|Family)) +
+modPV11<-brmhelp(
+  bf(Parasites ~ Age + Sex + PDSPest+HHPDSPest+HHParasites+ViParasites) +
+    bf(PDSPest ~ Age + Sex + HHPDSPest+ViPDSPest) +
+    bf(HHParasites ~ HHPDSPest + ViParasites + (1|p|Family)) + 
+    bf(HHPDSPest ~ ViPDSPest + (1|p|Family)) +
     set_rescor(FALSE))
 
-modF11b<-brmhelp(
-  bf(Inflam ~ Age + Sex + HHInflam+ViInflam) +
-    bf(PDSFood ~ Age + Sex + HHPDSFood+Inflam+HHInflam+ViPDSFood) +
-    bf(HHInflam ~ ViInflam + (1|p|Family)) + 
-    bf(HHPDSFood ~ HHInflam + ViPDSFood + (1|p|Family)) +
-    set_rescor(FALSE))
 
-modP11b<-brmhelp(
-  bf(Parasites ~ Age + Sex + HHParasites+ViParasites) +
-    bf(PDSCont ~ Age + Sex + HHPDSCont+Parasites+HHParasites+ViPDSCont) +
-    bf(HHParasites ~ ViParasites + (1|p|Family)) +
-    bf(HHPDSCont ~ HHParasites + ViPDSCont + (1|p|Family)) +
-    set_rescor(FALSE))
+save(mod11,modP11,modF11,modPF11,modV11,modPV11,file="mod11.Rdata")
 
-modPF11b<-brmhelp(
-  bf(Parasites ~ Age + Sex + HHParasites+ViParasites) +
-    bf(PDSFood ~ Age + Sex + HHPDSFood+Parasites+HHParasites+ViPDSFood) +
-    bf(HHParasites ~ ViParasites +(1|p|Family)) +
-    bf(HHPDSFood ~ HHParasites +ViPDSFood+(1|p|Family)) +
-    set_rescor(FALSE))
 
-save(mod11b,modP11b,modF11b,modPF11b,file="mod11b.Rdata")
+
 
 #MI models
 mod11MI<-brmhelp(
@@ -316,74 +406,19 @@ modPF11MI<-brmhelp(
     bf(HHPDSFood ~ (1|q|Village) + (1|p|Family) + MSOL + TSOL + HOUSE) +
     set_rescor(FALSE))
 
-save(mod11MI,modP11MI,modF11MI,modPF11MI,file="mod11MI.Rdata")
-#with family as RE
-
-mod11MI2<-brmhelp(
-  bf(Inflam ~ Age + Sex + PDSCont + (1|p|Family) +(1|q|Village) + MSOL + TSOL + HOUSE) +
-    bf(PDSCont ~ Age + Sex + Inflam + (1|p|Family) +(1|q|Village) + MSOL + TSOL + HOUSE) +
+modV11MI<-brmhelp(
+  bf(Inflam ~ Age + Sex + PDSPest+HHPDSPest+HHInflam+(1|q|Village) + MSOL + TSOL + HOUSE) +
+    bf(PDSPest ~ Age + Sex + HHPDSPest+(1|q|Village) + MSOL + TSOL + HOUSE) +
+    bf(HHInflam ~ HHPDSPest + (1|q|Village) + (1|p|Family) + MSOL + TSOL + HOUSE) + 
+    bf(HHPDSPest ~ (1|q|Village) + (1|p|Family) + MSOL + TSOL + HOUSE) +
     set_rescor(FALSE))
 
-modF11MI2<-brmhelp(
-  bf(Inflam ~ Age + Sex + PDSFood + (1|p|Family)+(1|q|Village) + MSOL + TSOL + HOUSE) +
-    bf(PDSFood ~ Age + Sex + Inflam + (1|p|Family) +(1|q|Village) + MSOL + TSOL + HOUSE) +
+modPV11MI<-brmhelp(
+  bf(Parasites ~ Age + Sex + PDSPest+HHPDSPest+HHParasites++ (1|q|Village) + MSOL + TSOL + HOUSE) +
+    bf(PDSPest ~ Age + Sex + HHPDSPest+(1|q|Village) + MSOL + TSOL + HOUSE) +
+    bf(HHParasites ~ HHPDSPest + (1|q|Village) + (1|p|Family) + MSOL + TSOL + HOUSE) + 
+    bf(HHPDSPest ~ (1|q|Village) + (1|p|Family) + MSOL + TSOL + HOUSE) +
     set_rescor(FALSE))
 
-modP11MI2<-brmhelp(
-  bf(Parasites ~ Age + Sex + PDSCont + (1|p|Family) + (1|q|Village) + MSOL + TSOL + HOUSE) +
-    bf(PDSCont ~ Age + Sex + Parasites + (1|p|Family) +(1|q|Village) + MSOL + TSOL + HOUSE) +
-    set_rescor(FALSE))
 
-modPF11MI2<-brmhelp(
-  bf(Parasites ~ Age + Sex + PDSFood + (1|p|Family) + (1|q|Village) + MSOL + TSOL + HOUSE) +
-    bf(PDSFood ~ Age + Sex + Parasites + (1|p|Family) + (1|q|Village) + MSOL + TSOL + HOUSE) +
-    set_rescor(FALSE))
-save(mod11MI2,modP11MI2,modF11MI2,modPF11MI2,file="mod11MI2.Rdata")
-
-# 
-# 
-# betaCI<-function(beta){
-#   paste0(format(round(beta[1],2),nsmall=2,digits=2)," (",format(round(beta[2],2),nsmall=2,digits=2), " - ", format(round(beta[3],2),nsmall=2,digits=2),")")
-# }
-# 
-# modeltable<-function(models,names){
-#   names(models)<-names
-#   df<-lapply(models,function(mod) data.frame(Variable=row.names(summary(mod)$fixed),Beta=apply(summary(mod)$fixed[,c(1,3,4)],1,betaCI)))
-#   for(i in 1:length(df)) colnames(df[[i]])[2]<-names[i]
-#   df2<-Reduce(function(m,y) merge(m,y,all=TRUE),df)
-# }
-# 
-# betaCI<-function(beta){
-#   paste0(format(round(beta[1],2),nsmall=2,digits=2)," (",format(round(beta[2],2),nsmall=2,digits=2), " - ", format(round(beta[3],2),nsmall=2,digits=2),")")
-# }
-
-#descriptive tables
-output<-function(x) paste0(format(round(mean(x),2),nsmall=2,digits=2)," (",format(round(sd(x),2),nsmall=2,digits=2),")")
-ms<-aggregate(cbind(Inflam,Parasites,PDSCont,PDSFood,MSOL,HOUSE,TSOL,Age,Sex)~Village,data=dlong,FUN=output)
-
-#simple tests
-modC1x<-brmhelp(bf(Inflam ~ Age + Sex + PDSCont + (1|Family) + (1|Village)))
-modF1x<-brmhelp(bf(Inflam ~ Age + Sex + PDSFood + (1|Family) + (1|Village)))
-modP1x<-brmhelp(bf(Parasites ~ Age + Sex + PDSCont + (1|Family) + (1|Village)))
-modPF1x<-brmhelp(bf(Parasites ~ Age + Sex + PDSFood + (1|Family) + (1|Village)))
-save(modC1x,modF1x,modP1x,modPF1x,file="simpleREmodels.Rdata")
-
-modI2x<-brmhelp(bf(Inflam ~ Age + Sex + PDSCont + PDSFood + (1|Family) + (1|Village)))
-modP2x<-brmhelp(bf(Parasites ~ Age + Sex + PDSCont + PDSFood + (1|Family) + (1|Village)))
-modF2x<-brmhelp(bf(PDSFood ~ Age + Sex + Inflam + Parasites + (1|Family) + (1|Village)))
-modC2x<-brmhelp(bf(PDSCont ~ Age + Sex + Inflam + Parasites + (1|Family) + (1|Village)))
-save(modI2x,modP2x,modF2x,modC2x,file="REmodels2.Rdata")
-
-modI3x<-brmhelp(bf(Inflam ~ Age + Sex + PDSCont + PDSFood + MSOL + HOUSE + TSOL + (1|Family) + (1|Village)))
-modP3x<-brmhelp(bf(Parasites ~ Age + Sex + PDSCont + PDSFood + MSOL + HOUSE + TSOL + (1|Family) + (1|Village)))
-modP3x2<-brmhelp(bf(Parasites ~ Age + Sex + PDSCont + PDSFood + HOUSE + (1|Family)))
-
-#Pest models
-mod1pestx<-brmhelp(bf(Inflam ~ Age + Sex + PDSPest + (1|Family) + (1|Village)))
-modP1pestx<-brmhelp(bf(Parasites ~ Age + Sex + PDSPest + (1|Family) + (1|Village)))
-mod2pestx<-brmhelp(bf(PDSPest ~ Age + Sex + Inflam + Parasites + (1|Family) + (1|Village)))
-save(mod1pestx,modP1pestx,mod2pestx,file="Pest Models.Rdata")
-
-#correlations
-cors<-cor(d2[,c("PDSCont","PDSFood","Inflam","Parasites","MSOL","HOUSE","TSOL","HHPDSCont","HHPDSFood","HHInflam","HHParasites","ViPDSCont","ViPDSFood","ViInflam","ViParasites")],use="pairwise.complete.obs")
-heatmap(cors,Rowv=NA,Colv=NA,)
+save(mod11MI,modP11MI,modF11MI,modPF11MI,modV11MI,modPV11MI, file="mod11MI.Rdata")

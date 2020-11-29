@@ -7,6 +7,7 @@
 
 # User-specific files
 .Ruserdata
+loaddata.R
 
 # Example code in package build process
 *-Ex.R
@@ -36,3 +37,4 @@ vignettes/*.pdf
 *.utf8.md
 *.knit.md
 *.Rproj
+
