@@ -101,7 +101,7 @@ abline(h=3.5,lty=3)
 axis(2,at=1:6,labels=c("C1","C2","C3","C1","C2","C3"),las=2,tick=FALSE)
 axis(2,at=c(2,5),labels=c("Inflam","Parasites"),line=-2,tick=FALSE,hadj=0.5)
 box()
-mtext("C",side=3,line=-1.5,at=-1.2,cex=1.45)
+mtext("C",side=3,line=0.5,at=-1.2,cex=1.45)
 dev.off()
 
 
