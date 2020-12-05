@@ -71,13 +71,24 @@ helminth<-simbiomarker(DP=0.80,freq=0.005,duration=2000,durationsd=300,durationl
   
 tiff("infection.tif",width=2800,height=3000,res=400,pointsize=12,compression="lzw")
 par(mfrow=c(3,2),mar=c(4,5,2,1))
-plot(inflammation$biomarker[1,-(1:365)],type="l",ylim=c(0,1),xlab=NA,ylab="Biomarker",main="Inflmmation")
+plot(inflammation$biomarker[1,-(1:365)],type="l",ylim=c(0,1),xlab=NA,ylab="Biomarker",main="Inflammation")
 plot(helminth$biomarker[1,-(1:3500)],type="l",ylim=c(0,20),xlab=NA,ylab="Biomarker",main="Parasite")
 plot(inflammation$biomarker[2,-(1:365)],type="l",ylim=c(0,1),xlab=NA,ylab="Biomarker")
 plot(helminth$biomarker[2,-(1:3500)],type="l",ylim=c(0,20),xlab=NA,ylab="Biomarker")
 plot(inflammation$biomarker[3,-(1:365)],type="l",ylim=c(0,1),xlab="Days",ylab="Biomarker")
 plot(helminth$biomarker[3,-(1:3500)],type="l",ylim=c(0,20),xlab="Days",ylab="Biomarker")
 dev.off()
+
+##False Positive test, with no effect 
+inflammation<-simbiomarker(DP=1,freq=0.025,duration=7,durationsd=1.5,durationlog=TRUE,hl=0.95,stack=FALSE,days=1000,n=750)
+inflamtest<-foreach(i=1:300, .combine=rbind, .packages = "rethinking") %dopar% {
+  biosampmap(inflammation,75)
+}
+PerBPs<-t(sapply(PerBP,function(y) apply(inflamtest,2,function(x) c(mean(x[(y-l+1):y]), sum(x[(y-l+1):y]<0)/l))))
+#Trials with effects < -0.25
+sum(PerBPs[,1] < -0.25)/nrow(PerBPs)
+#Trials with effects < -0.25 and posteriors that 95% exclude 0
+sum((PerBPs[,1] < -0.25) & (PerBPs[,2] > 0.95))/nrow(PerBPs)
 
 
 library(foreach)
@@ -122,6 +133,13 @@ helminthpowermap<-foreach(DP=tests$DP,freq=tests$freq, .combine=rbind, .packages
   PerBPs<-t(sapply(PerBP,function(y) apply(inflamtest,2,function(x)(sum(x[(y-l+1):y]<0)/l) > 0.90)))
   c(means[1],hpdis[,1],Bps[1],means[2],hpdis[,2],Bps[2],colSums(PerBPs)/nrow(PerBPs))
 }
+
+save(inflampowermap,helminthpowermap,file="simulations.Rdata")
+
+
+#False positive test
+
+
 
 tiff("parameter.tif",width=2000,height=1000,res=300,pointsize=9,compression="lzw")
 
