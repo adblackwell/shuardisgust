@@ -59,9 +59,9 @@ ft
 save_as_docx(ft, path = "Variance Table.docx")
 
 #Plot of variance components and village means
-tiff("Figure 1.tif",width=3000,height=1300,res=300,pointsize=13,compression="lzw")
-layout(matrix(c(4,1,5,2,3),nrow=1),widths=c(0.1,1,0.1,0.85,0.15))
-par(mar=c(5,1,5,1))
+tiff("Figure 1R.tif",width=3000,height=1300,res=300,pointsize=13,compression="lzw")
+layout(matrix(c(4,1,5,2,3),nrow=1),widths=c(0.13,1,0.13,0.85,0.15))
+par(mar=c(5,0,5,1))
 cols<-c("#ffbf47","#dd6031","#0262a2","#4daa57","#311e10")[c(4,1,3)]
 colnames(Comps)<-c("Community","Household","Individual")
 rownames(Comps)<-varlabs
@@ -70,7 +70,7 @@ mosaicplot(Comps2,color=cols,dir=c("h","v"),las=1,cex=1,main=NA)
 axis(1,at=c(0.23,0.61,0.99),labels=c("0%","50%","100%"),line=0.5)
 axis(1,at=0.61,labels=c("Proportion of Variance"),line=2.5,tick=FALSE)
 
-par(mar=c(5,7,6,1))
+par(mar=c(5,6,6,1))
 ms<-aggregate(cbind(PDSTotal,PDSCont,PDSFood,PDSPest,Parasites,Inflam,MSOL,HOUSE,TSOL)~Village,data=dlong,FUN=mean)
 ms<-as.matrix(ms[,-1])
 colnames(ms)<-varlabs
